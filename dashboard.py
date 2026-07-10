@@ -51,9 +51,9 @@ st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอ�
 all_months = sorted([m for m in df['Month'].unique().tolist() if m.lower() != 'nan' and m != ''])
 selected_months = st.sidebar.multiselect("📅 เลือกเดือน (Month)", options=all_months, default=all_months)
 
-# 2. ตัวกรองรายสัปดาห์ (WW) - เตรียมตัวแปร all_weeks แก้ไขจุด NameError เรียบร้อย
-all_weeks = sorted([w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != ''])
-selected_weeks = st.sidebar.multiselect("📆 เลือกสัปดาห์ (WW)", options=all_weeks, default=all_weeks)
+# 2. ตัวกรองรายสัปดาห์ (WW)
+all_weeks_list = sorted([w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != ''])
+selected_weeks = st.sidebar.multiselect("📆 เลือกสัปดาห์ (WW)", options=all_weeks_list, default=all_weeks_list)
 
 # 3. ตัวกรองผู้รับผิดชอบ (PIC)
 all_pics = sorted([p for p in df['PIC'].unique().tolist() if p.lower() != 'nan' and p != ''])
@@ -123,13 +123,13 @@ with chart_col2:
 
 st.markdown("---")
 
-# 5. เพิ่มกราฟแนวโน้มภาระงานราย Week เพื่อให้เห็นภาพรวม Timeline 
+# 5. กราฟแนวโน้มภาระงานราย Week (แก้ไขจุดที่ทำให้ NameError พังเรียบร้อย)
 st.subheader("📈 แนวโน้มสถานะงานรายสัปดาห์ (Weekly Task Trend)")
 if total_tasks > 0:
     weekly_df = filtered_df.copy()
     fig_trend = px.histogram(weekly_df, x='WW', color='Status', barmode='group',
                              color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
-    fig_trend.update_layout(xaxis_title="สัปดาห์ทำงาน (WW)", yaxis_title="จำนวนงาน (Tasks)", categoryorders={"WW": all_weeks})
+    fig_trend.update_layout(xaxis_title="สัปดาห์ทำงาน (WW)", yaxis_title="จำนวนงาน (Tasks)")
     st.plotly_chart(fig_trend, use_container_width=True)
 else:
     st.info("ไม่มีข้อมูลแสดงกราฟแนวโน้ม")
