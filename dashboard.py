@@ -109,18 +109,18 @@ with chart_col1:
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
-        st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟวงกลม")
+        st.warning("⚠️ ไม่มีข้อมูลงานสำหรับแสดงกราฟวงกลมในช่วงเวลานี้")
 
 with chart_col2:
     st.subheader("👨‍💻 สรุปจำนวนงานและสถานะรายบุคคล (PIC Progress)")
     if total_tasks > 0:
-        # บังคับใช้คอลัมน์ 'Status' ตัวมาตรฐานที่ปลอดภัยที่สุด
+        # เช็คให้ชัวร์ว่ามีสถานะที่ตรงกับ Map สีไหม เพื่อป้องกัน KeyError ตอนตารางว่าง
         fig_bar = px.histogram(filtered_df, y='PIC', color='Status', barmode='stack', orientation='h',
                                color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="จำนวนงาน (Tasks)", yaxis_title="รายชื่อ PIC")
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟแท่ง")
+        st.warning("⚠️ ไม่มีข้อมูลงานสำหรับแสดงกราฟแท่งรายบุคคลในช่วงเวลานี้")
 
 st.markdown("---")
 
@@ -133,16 +133,17 @@ if total_tasks > 0:
     fig_trend.update_layout(xaxis_title="สัปดาห์ทำงาน (WW)", yaxis_title="จำนวนงาน (Tasks)")
     st.plotly_chart(fig_trend, use_container_width=True)
 else:
-    st.info("ไม่มีข้อมูลแสดงกราฟแนวโน้ม")
+    st.info("ℹ️ ไม่มีข้อมูลแสดงกราฟแนวโน้มรายสัปดาห์")
 
 st.markdown("---")
 
 # 6. ส่วนแสดงตารางรายชื่องานที่ค้างเกินกำหนด (Overdue) 
 st.subheader("🚨 รายการงานเกินกำหนดอย่างละเอียดตามช่วงเวลา (Overdue Task List)")
 
+# ค้นหางานค้างโดยอ้างอิงจากคอลัมน์ล้างค่า Status_Clean
 overdue_df = filtered_df[filtered_df['Status_Clean'] == 'overdue']
 
-if not overdue_df.empty:
+if total_tasks > 0 and not overdue_df.empty:
     display_cols = ['Month', 'WW', 'Type', 'TASK', 'Customer', 'PIC', 'Target Date']
     available_display = [c for c in display_cols if c in overdue_df.columns]
     st.dataframe(overdue_df[available_display].reset_index(drop=True), use_container_width=True)
