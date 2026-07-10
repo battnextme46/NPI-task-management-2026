@@ -44,20 +44,15 @@ except Exception as e:
     st.stop()
 
 
-# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย เพิ่มกรองตาม Week / Month) ---
+# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย เพิ่มกรองตาม Week / Month แบบแก้ Error ล้างค่าเรียงลำดับ) ---
 st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอร์ด")
 
 # 1. ตัวกรองรายเดือน (Month)
 all_months = sorted([m for m in df['Month'].unique().tolist() if m.lower() != 'nan' and m != ''])
 selected_months = st.sidebar.multiselect("📅 เลือกเดือน (Month)", options=all_months, default=all_months)
 
-# 2. ตัวกรองรายสัปดาห์ (WW)
-# ปรับให้เรียงลำดับตามตัวเลขสัปดาห์โดยพยายามแปลงเป็น int เพื่อความสวยงามในการแสดงผล
-all_weeks_raw = [w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != '']
-try:
-    all_weeks = sorted(all_weeks_raw, key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else x)
-except:
-    all_weeks = sorted(all_weeks_raw)
+# 2. ตัวกรองรายสัปดาห์ (WW) - เปลี่ยนมาใช้การเรียงข้อความธรรมดา ป้องกันโค้ดเอ๋อ
+all_weeks = sorted([w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != ''])
 selected_weeks = st.sidebar.multiselect("📆 เลือกสัปดาห์ (WW)", options=all_weeks, default=all_weeks)
 
 # 3. ตัวกรองผู้รับผิดชอบ (PIC)
@@ -131,10 +126,9 @@ with chart_col2:
 
 st.markdown("---")
 
-# 5. เพิ่มกราฟแนวโน้มภาระงานราย Week เพื่อให้เห็นภาพรวม Timeline (Timeline Trend Chart)
+# 5. เพิ่มกราฟแนวโน้มภาระงานราย Week เพื่อให้เห็นภาพรวม Timeline 
 st.subheader("📈 แนวโน้มสถานะงานรายสัปดาห์ (Weekly Task Trend)")
 if total_tasks > 0:
-    # จัดกลุ่มเพื่อเรียงลำดับสัปดาห์บนกราฟแท่งให้สวยงาม
     weekly_df = filtered_df.copy()
     fig_trend = px.histogram(weekly_df, x='WW', color='Status', barmode='group',
                              color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
