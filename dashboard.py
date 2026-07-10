@@ -1,0 +1,105 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# 1. ตั้งค่าหน้าเว็บให้แสดงผลเต็มจอแบบกว้าง (Wide Layout)
+st.set_page_config(
+    page_title="NPI Integration Dashboard", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# 2. ฟังก์ชันสำหรับดึงข้อมูลจากลิงก์ตรงที่คุณเตรียมไว้
+@st.cache_data(ttl=600)  # ดึงข้อมูลใหม่ทุกๆ 10 นาที เพื่อไม่ให้ระบบโหลดช้า
+def load_data_from_sharepoint():
+    # ลิงก์ตรงสายดาวน์โหลดที่คุณแกะมาเรียบร้อยแล้ว
+    sharepoint_url = "https://excel.officeapps.live.com/x/_layouts/XlFileHandler.aspx?WacUserType=WOPI&usid=65875e19-3428-dd0f-d86c-ee7b8532658a&NoAuth=1&waccluster=PJP1"
+    
+    # ดึงข้อมูลจากแท็บข้อมูลหลัก (เปลี่ยนชื่อ sheet_name ถ้าแท็บข้อมูลดิบจริงไม่ใช่ชื่อนี้)
+    # ใส่เป็น 0 หากต้องการให้อ่านแท็บแรกสุดของไฟล์ Excel เสมอ
+    df = pd.read_excel(sharepoint_url, sheet_name=0)
+    
+    # ลบแถวที่ไม่มีข้อมูลสำคัญออกเพื่อป้องกันการคำนวณผิดพลาด
+    df = df.dropna(subset=['Type', 'Status']) 
+    return df
+
+# โหลดข้อมูลเข้ามาเก็บไว้ในตัวแปรชื่อ df
+try:
+    df = load_data_from_sharepoint()
+except Exception as e:
+    st.error(f"❌ ไม่สามารถดึงข้อมูลจากลิงก์ได้ กรุณาตรวจสอบสิทธิ์หรือลิงก์อีกครั้ง: {e}")
+    st.stop()
+
+# --- SIDEBAR FILTERS (เมนูด้านซ้ายสำหรับกรองข้อมูล) ---
+st.sidebar.header("🔍 คัดกรองข้อมูล Task")
+
+# สร้างตัวเลือกประเภทงาน (Type) บนเมนูซ้าย
+all_types = df['Type'].unique().tolist()
+selected_types = st.sidebar.multiselect("เลือกประเภทงาน (Type)", options=all_types, default=all_types)
+
+# กรองข้อมูลตามที่ User เลือก
+filtered_df = df[df['Type'].isin(selected_types)]
+
+
+# --- MAIN INTERFACE (ส่วนแสดงผลหลักตรงกลางหน้าเว็บ) ---
+st.title("🚀 NPI Integration Task Dashboard")
+st.write("ระบบดึงข้อมูลและประมวลผลความคืบหน้าของงานทีม NPI แบบ Real-time")
+st.markdown("---")
+
+# 3. ส่วนแสดง KPI Metrics (ตัวเลขสำคัญด้านบนสุด)
+total_tasks = len(filtered_df)
+completed_tasks = len(filtered_df[filtered_df['Status'].str.lower().str.strip() == 'closed'])
+overdue_tasks = len(filtered_df[filtered_df['Status'].str.lower().str.strip() == 'overdue'])
+
+# คำนวณ % On-time Performance
+on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100.0
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric(label="📊 จำนวนงานทั้งหมด", value=f"{total_tasks} Tasks")
+with col2:
+    st.metric(label="✅ งานที่เสร็จสิ้นแล้ว (Closed)", value=f"{completed_tasks} Tasks")
+with col3:
+    st.metric(label="⚠️ งานที่เกินกำหนด (Overdue)", value=f"{overdue_tasks} Tasks")
+with col4:
+    st.metric(label="📈 On-time Performance", value=f"{on_time_perf:.1f}%")
+
+st.markdown("---")
+
+
+# 4. ส่วนแสดงผลกราฟสไตล์ Modern (แบ่งเป็น 2 คอลัมน์ซ้ายขวา)
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    st.subheader("🍕 สัดส่วนประเภทงาน (Task Ratio)")
+    type_counts = filtered_df['Type'].value_counts().reset_index()
+    type_counts.columns = ['Type', 'Count']
+    
+    fig_pie = px.pie(type_counts, values='Count', names='Type', hole=0.4,
+                     color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+with chart_col2:
+    st.subheader("📊 สถานะงานแยกตามแผนก (Task Progress by Type)")
+    fig_bar = px.histogram(filtered_df, x='Type', color='Status', barmode='stack',
+                           color_discrete_map={'Closed': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444', 'On time': '#10b981'})
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+
+st.markdown("---")
+
+# 5. ส่วนแสดงตารางรายชื่องานที่ Overdue (งานที่เกินกำหนด)
+st.subheader("🚨 รายชื่อ Task ที่เกินกำหนด (Overdue Task List)")
+
+# ค้นหาคอลัมน์ที่มีอยู่ในข้อมูลจริงเพื่อป้องกัน Error กรณีชื่อคอลัมน์ไม่ตรงกับ Template
+available_cols = filtered_df.columns.tolist()
+desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date']
+display_cols = [col for col in desired_cols if col in available_cols]
+
+overdue_list = filtered_df[filtered_df['Status'].str.lower().str.strip() == 'overdue'][display_cols]
+
+if not overdue_list.empty:
+    st.dataframe(overdue_list, use_container_width=True)
+else:
+    st.success("🎉 ยอดเยี่ยมมาก! ไม่มีงานที่เกินกำหนด (Overdue) ในขณะนี้")
