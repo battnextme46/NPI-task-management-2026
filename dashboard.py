@@ -9,16 +9,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันโหลดข้อมูล - สั่งจำกัดการอ่านคอลัมน์เพื่อประหยัด RAM เซิร์ฟเวอร์
+# 2. ฟังก์ชันโหลดข้อมูล - อ่านหัวตารางแถวที่ 12 (header=11) ของแท็บ Schedule2026
 @st.cache_data(ttl=10)
 def load_npi_data():
-    # ระบุให้ดึงเฉพาะคอลัมน์ที่ใช้งานจริง (A ถึง M) เพื่อป้องกันตัวแปรค้างในหน่วยความจำ
-    df = pd.read_excel("data.xlsx", sheet_name="Schedule2026", header=11, usecols="A:M", engine="openpyxl")
+    df = pd.read_excel("data.xlsx", sheet_name="Schedule2026", header=11, engine="openpyxl")
     
     # ล้างช่องว่างที่หัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
     
-    # เคลียร์แถวว่างทิ้งทันทีลดขนาดตารางลง 80%
+    # ลบแถวที่เป็นค่าว่างเปล่าออก
     df = df.dropna(subset=['Type', 'Status'], how='any')
     
     # แปลงคอลัมน์สำคัญทั้งหมดเป็นข้อความสะอาดๆ
@@ -31,7 +30,7 @@ def load_npi_data():
     df = df[df['Type'].str.lower() != 'nan']
     df = df[df['Status'].str.lower() != 'nan']
     
-    # ปรับจูนสถานะให้เป็นมาตรฐานเดียวกัน
+    # ปรับจูนสถานะให้เป็นมาตรฐานเดียวกันเพื่อความแม่นยำในการนับ
     df['Status_Clean'] = df['Status'].str.lower()
     df.loc[df['Status_Clean'] == 'close', 'Status_Clean'] = 'closed'
     
@@ -41,11 +40,11 @@ def load_npi_data():
 try:
     df = load_npi_data()
 except Exception as e:
-    st.error(f"❌ เกิดข้อผิดพลาดในการดึงข้อมูล: {e}")
+    st.error(f"❌ เกิดข้อผิดพลาดในการอ่านข้อมูล: {e}")
     st.stop()
 
 
-# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย) ---
+# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย สามารถเลือกแยก/เลือกทั้งหมดได้อิสระ) ---
 st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอร์ด")
 
 # 1. ตัวกรองรายเดือน (Month)
@@ -108,31 +107,31 @@ with chart_col1:
         fig_pie = px.pie(type_counts, values='Count', names='Type', hole=0.4,
                          color_discrete_sequence=px.colors.qualitative.Safe)
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        # เปลี่ยนไปใช้ width='stretch' ตามระบบอัปเดตใหม่ของ Streamlit ในปี 2026
-        st.plotly_chart(fig_pie, width='stretch')
+        st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟวงกลม")
 
 with chart_col2:
     st.subheader("👨‍💻 สรุปจำนวนงานและสถานะรายบุคคล (PIC Progress)")
     if total_tasks > 0:
+        # บังคับใช้คอลัมน์ 'Status' ตัวมาตรฐานที่ปลอดภัยที่สุด
         fig_bar = px.histogram(filtered_df, y='PIC', color='Status', barmode='stack', orientation='h',
                                color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="จำนวนงาน (Tasks)", yaxis_title="รายชื่อ PIC")
-        st.plotly_chart(fig_bar, width='stretch')
+        st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟแท่ง")
 
 st.markdown("---")
 
-# 5. กราฟแนวโน้มภาระงานราย Week
+# 5. กราฟแนวโน้มภาระงานราย Week 
 st.subheader("📈 แนวโน้มสถานะงานรายสัปดาห์ (Weekly Task Trend)")
 if total_tasks > 0:
     weekly_df = filtered_df.copy()
     fig_trend = px.histogram(weekly_df, x='WW', color='Status', barmode='group',
                              color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
     fig_trend.update_layout(xaxis_title="สัปดาห์ทำงาน (WW)", yaxis_title="จำนวนงาน (Tasks)")
-    st.plotly_chart(fig_trend, width='stretch')
+    st.plotly_chart(fig_trend, use_container_width=True)
 else:
     st.info("ไม่มีข้อมูลแสดงกราฟแนวโน้ม")
 
@@ -146,6 +145,6 @@ overdue_df = filtered_df[filtered_df['Status_Clean'] == 'overdue']
 if not overdue_df.empty:
     display_cols = ['Month', 'WW', 'Type', 'TASK', 'Customer', 'PIC', 'Target Date']
     available_display = [c for c in display_cols if c in overdue_df.columns]
-    st.dataframe(overdue_df[available_display].reset_index(drop=True), width='stretch')
+    st.dataframe(overdue_df[available_display].reset_index(drop=True), use_container_width=True)
 else:
     st.success("🎉 ยอดเยี่ยมมาก! ไม่พบงานค้าง Overdue ในสัปดาห์/เดือนที่เลือก")
