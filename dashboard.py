@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import urllib.request
+import io
 
 # 1. ตั้งค่าหน้าเว็บให้แสดงผลเต็มจอแบบกว้าง (Wide Layout)
 st.set_page_config(
@@ -9,17 +11,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันสำหรับดึงข้อมูลจากลิงก์ตรงที่คุณเตรียมไว้
-@st.cache_data(ttl=600)  # ดึงข้อมูลใหม่ทุกๆ 10 นาที เพื่อไม่ให้ระบบโหลดช้า
+# 2. ฟังก์ชันสำหรับดึงข้อมูลจากลิงก์ตรงของคุณแบบปลอดภัยสูง
+@st.cache_data(ttl=600)  # ดึงข้อมูลใหม่ทุกๆ 10 นาที
 def load_data_from_sharepoint():
-    # ลิงก์ตรงสายดาวน์โหลดที่คุณแกะมาเรียบร้อยแล้ว
+    # ลิงก์ตรงสายดาวน์โหลดของคุณ
     sharepoint_url = "https://excel.officeapps.live.com/x/_layouts/XlFileHandler.aspx?WacUserType=WOPI&usid=65875e19-3428-dd0f-d86c-ee7b8532658a&NoAuth=1&waccluster=PJP1"
     
-    # ดึงข้อมูลจากแท็บข้อมูลหลัก (เปลี่ยนชื่อ sheet_name ถ้าแท็บข้อมูลดิบจริงไม่ใช่ชื่อนี้)
-    # ใส่เป็น 0 หากต้องการให้อ่านแท็บแรกสุดของไฟล์ Excel เสมอ
-    df = pd.read_excel(sharepoint_url, sheet_name=0)
+    # ดาวน์โหลดไฟล์ข้อมูลดิบลงหน่วยความจำชั่วคราวเพื่อหลีกเลี่ยงปัญหาเรื่อง Format ตรวจจับยาก
+    req = urllib.request.Request(sharepoint_url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as response:
+        file_data = response.read()
     
-    # ลบแถวที่ไม่มีข้อมูลสำคัญออกเพื่อป้องกันการคำนวณผิดพลาด
+    # บังคับใช้ engine='openpyxl' เพื่อแก้ปัญหา Error ทันที
+    # ปรับชื่อ sheet_name จากเลข 0 ไปเป็นชื่อแท็บข้อมูลดิบจริงในไฟล์ เช่น sheet_name='Schedule2026'
+    df = pd.read_excel(io.BytesIO(file_data), sheet_name=0, engine='openpyxl')
+    
+    # จัดการล้างช่องว่าง (ลบชื่อคอลัมน์ที่มีช่องว่างซ้ายขวา)
+    df.columns = df.columns.str.strip()
+    
+    # คัดกรองเอาแถวที่ไม่มีข้อมูลออกป้องกัน Error
     df = df.dropna(subset=['Type', 'Status']) 
     return df
 
@@ -48,8 +58,8 @@ st.markdown("---")
 
 # 3. ส่วนแสดง KPI Metrics (ตัวเลขสำคัญด้านบนสุด)
 total_tasks = len(filtered_df)
-completed_tasks = len(filtered_df[filtered_df['Status'].str.lower().str.strip() == 'closed'])
-overdue_tasks = len(filtered_df[filtered_df['Status'].str.lower().str.strip() == 'overdue'])
+completed_tasks = len(filtered_df[filtered_df['Status'].astype(str).str.lower().str.strip() == 'closed'])
+overdue_tasks = len(filtered_df[filtered_df['Status'].astype(str).str.lower().str.strip() == 'overdue'])
 
 # คำนวณ % On-time Performance
 on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100.0
@@ -97,7 +107,7 @@ available_cols = filtered_df.columns.tolist()
 desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date']
 display_cols = [col for col in desired_cols if col in available_cols]
 
-overdue_list = filtered_df[filtered_df['Status'].str.lower().str.strip() == 'overdue'][display_cols]
+overdue_list = filtered_df[filtered_df['Status'].astype(str).str.lower().str.strip() == 'overdue'][display_cols]
 
 if not overdue_list.empty:
     st.dataframe(overdue_list, use_container_width=True)
