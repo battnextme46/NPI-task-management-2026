@@ -11,25 +11,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันสำหรับดึงข้อมูลจากลิงก์ตรงของคุณแบบปลอดภัยสูง
-@st.cache_data(ttl=600)  # ดึงข้อมูลใหม่ทุกๆ 10 นาที
+# 2. ฟังก์ชันสำหรับดึงข้อมูลจากคลาวด์บริษัทโดยตรง (Real-time 100%)
+@st.cache_data(ttl=60)  # ดึงข้อมูลใหม่จาก Excel ทุกๆ 1 นาที (60 วินาที) ทำให้ข้อมูลอัปเดตอัตโนมัติ
 def load_data_from_sharepoint():
-    # ลิงก์ตรงสายดาวน์โหลดของคุณ
-    sharepoint_url = "https://excel.officeapps.live.com/x/_layouts/XlFileHandler.aspx?WacUserType=WOPI&usid=65875e19-3428-dd0f-d86c-ee7b8532658a&NoAuth=1&waccluster=PJP1"
+    # ลิงก์ตรงที่แปลงพารามิเตอร์เป็นตัวบังคับดาวน์โหลดดิบเรียบร้อยแล้ว
+    sharepoint_url = "https://asiamagneticwinding-my.sharepoint.com/personal/npi25_amw-ems_com/_layouts/15/download.aspx?UniqueId=AD9D6A3A-3A5C-457C-A831-40F97A548C03"
     
-    # ดาวน์โหลดไฟล์ข้อมูลดิบลงหน่วยความจำชั่วคราวเพื่อหลีกเลี่ยงปัญหาเรื่อง Format ตรวจจับยาก
+    # ส่งคำขอจำลองตัวตนเป็นบราวเซอร์เพื่อดาวน์โหลดไฟล์ข้อมูลดิบเข้าหน่วยความจำ
     req = urllib.request.Request(sharepoint_url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req) as response:
         file_data = response.read()
     
-    # บังคับใช้ engine='openpyxl' เพื่อแก้ปัญหา Error ทันที
-    # ปรับชื่อ sheet_name จากเลข 0 ไปเป็นชื่อแท็บข้อมูลดิบจริงในไฟล์ เช่น sheet_name='Schedule2026'
-    df = pd.read_excel(io.BytesIO(file_data), sheet_name=0, engine='openpyxl')
+    # อ่านข้อมูลโดยเจาะจงแท็บ 'Schedule2026' และระบุ engine เป็น openpyxl
+    df = pd.read_excel(io.BytesIO(file_data), sheet_name="Schedule2026", engine="openpyxl")
     
-    # จัดการล้างช่องว่าง (ลบชื่อคอลัมน์ที่มีช่องว่างซ้ายขวา)
+    # ล้างช่องว่างที่อาจติดมากับชื่อคอลัมน์
     df.columns = df.columns.str.strip()
     
-    # คัดกรองเอาแถวที่ไม่มีข้อมูลออกป้องกัน Error
+    # คัดกรองเอาเฉพาะแถวที่มีข้อมูล Type และ Status จริงๆ ป้องกันตารางว่างด้านล่าง
     df = df.dropna(subset=['Type', 'Status']) 
     return df
 
@@ -37,7 +36,8 @@ def load_data_from_sharepoint():
 try:
     df = load_data_from_sharepoint()
 except Exception as e:
-    st.error(f"❌ ไม่สามารถดึงข้อมูลจากลิงก์ได้ กรุณาตรวจสอบสิทธิ์หรือลิงก์อีกครั้ง: {e}")
+    st.error(f"❌ ไม่สามารถดึงข้อมูลแบบ Real-time ได้: {e}")
+    st.info("💡 คำแนะนำ: หากระบบแจ้งเกี่ยวกับรูปแบบไฟล์ (format) หรือ zip file แสดงว่าองค์กรอาจมีการบล็อกสิทธิ์ไอพีภายนอก ให้เปลี่ยนไปใช้วิธีฝากไฟล์บน GitHub แทนครับ")
     st.stop()
 
 # --- SIDEBAR FILTERS (เมนูด้านซ้ายสำหรับกรองข้อมูล) ---
@@ -102,7 +102,7 @@ st.markdown("---")
 # 5. ส่วนแสดงตารางรายชื่องานที่ Overdue (งานที่เกินกำหนด)
 st.subheader("🚨 รายชื่อ Task ที่เกินกำหนด (Overdue Task List)")
 
-# ค้นหาคอลัมน์ที่มีอยู่ในข้อมูลจริงเพื่อป้องกัน Error กรณีชื่อคอลัมน์ไม่ตรงกับ Template
+# ค้นหาคอลัมน์ที่มีอยู่ในข้อมูลจริงเพื่อป้องกัน Error กรณีชื่อคอลัมน์ไม่ตรงกับตาราง Excel
 available_cols = filtered_df.columns.tolist()
 desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date']
 display_cols = [col for col in desired_cols if col in available_cols]
