@@ -9,52 +9,57 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันสำหรับดึงข้อมูลจากไฟล์ Excel ที่อยู่คู่กันบน GitHub
-@st.cache_data(ttl=60)  # รีเฟรชและตรวจสอบไฟล์ใหม่ทุกๆ 1 นาที
-def load_data_local():
-    # อ่านไฟล์ดิบที่ชื่อ data.xlsx ในโฟลเดอร์เดียวกัน
-    # ดึงข้อมูลจากแท็บแรกสุด (Index 0) เพื่อความชัวร์ หรือเปลี่ยนเป็น "Schedule2026"
+# 2. ฟังก์ชันสำหรับดึงข้อมูลจากไฟล์ data.xlsx บน GitHub โดยตรง
+@st.cache_data(ttl=10)  # ตั้งให้เช็คไฟล์ใหม่ไวขึ้นทุกๆ 10 วินาที
+def load_data_from_github():
+    # สั่งอ่านไฟล์ชื่อ data.xlsx ที่อยู่ข้างกันบน GitHub
+    # sheet_name=0 หมายถึง บังคับให้อ่านแท็บแรกสุดจากซ้ายของไฟล์เสมอ ป้องกันปัญหาชื่อแท็บไม่ตรง
     df = pd.read_excel("data.xlsx", sheet_name=0, engine="openpyxl")
     
-    # ล้างช่องว่างที่หัวคอลัมน์ออกทั้งหมดเพื่อป้องกันการเรียกชื่อคอลลัมน์พลาด
+    # ล้างช่องว่างที่หัวคอลัมน์ออกทั้งหมด
     df.columns = df.columns.astype(str).str.strip()
     
-    # ดึงคอลัมน์สำคัญมาแปลงเป็นข้อความธรรมดา ล้างช่องว่าง และคัดแถวว่างทิ้ง
-    df['Type'] = df['Type'].astype(str).str.strip()
-    df['Status'] = df['Status'].astype(str).str.strip()
-    df = df[df['Type'] != 'nan']
-    df = df[df['Status'] != 'nan']
-    
+    # คัดกรองและเคลียร์แถวที่ไม่มีข้อมูลสำคัญออก ป้องกันข้อมูลเพี้ยน
+    if 'Type' in df.columns and 'Status' in df.columns:
+        df['Type'] = df['Type'].astype(str).str.strip()
+        df['Status'] = df['Status'].astype(str).str.strip()
+        df = df[df['Type'] != 'nan']
+        df = df[df['Status'] != 'nan']
     return df
 
 # โหลดข้อมูลเข้ามาเก็บไว้ในตัวแปรชื่อ df
 try:
-    df = load_data_local()
+    df = load_data_from_github()
 except Exception as e:
-    st.error(f"❌ ไม่สามารถเปิดไฟล์ข้อมูลใน GitHub ได้: {e}")
-    st.info("💡 คำแนะนำ: โปรดตรวจสอบว่าคุณได้ลากไฟล์ Excel ขึ้นไปวางบน GitHub โดยตั้งชื่อว่า 'data.xlsx' เรียบร้อยแล้วหรือยัง")
+    st.error(f"❌ ระบบยังหาไฟล์ใน GitHub ไม่เจอ: {e}")
+    st.info("💡 รหัสตรวจสอบ: โปรดตรวจสอบว่าใน GitHub มีไฟล์ชื่อ data.xlsx อยู่คู่กับไฟล์ dashboard.py ในโฟลเดอร์หลักแล้ว")
     st.stop()
+
+# --- ตรวจสอบโครงสร้างคอลัมน์ใน Excel ---
+# หาก Excel ของน้องใช้ตัวพิมพ์เล็กหรือพิมพ์ใหญ่ โค้ดส่วนนี้จะปรับให้เข้ากับหน้างานอัตโนมัติ
+available_cols = df.columns.tolist()
+type_col = 'Type' if 'Type' in available_cols else ('TYPE' if 'TYPE' in available_cols else available_cols[0])
+status_col = 'Status' if 'Status' in available_cols else ('STATUS' if 'STATUS' in available_cols else available_cols[1])
+
 
 # --- SIDEBAR FILTERS (เมนูด้านซ้ายสำหรับกรองข้อมูล) ---
 st.sidebar.header("🔍 คัดกรองข้อมูล Task")
-
-# สร้างตัวเลือกประเภทงาน (Type) บนเมนูซ้าย
-all_types = sorted(df['Type'].unique().tolist())
-selected_types = st.sidebar.multiselect("เลือกประเภทงาน (Type)", options=all_types, default=all_types)
+all_types = sorted(df[type_col].unique().tolist())
+selected_types = st.sidebar.multiselect("เลือกประเภทงาน", options=all_types, default=all_types)
 
 # กรองข้อมูลตามที่ User เลือก
-filtered_df = df[df['Type'].isin(selected_types)]
+filtered_df = df[df[type_col].isin(selected_types)]
 
 
 # --- MAIN INTERFACE (ส่วนแสดงผลหลักตรงกลางหน้าเว็บ) ---
 st.title("🚀 NPI Integration Task Dashboard")
-st.write("ระบบดึงข้อมูลและประมวลผลความคืบหน้าของงานทีม NPI (GitHub Storage System)")
+st.write("ระบบดึงข้อมูลและประมวลผลความคืบหน้าของงานทีม NPI (GitHub Local Storage)")
 st.markdown("---")
 
 # 3. ส่วนแสดง KPI Metrics (ตัวเลขสำคัญด้านบนสุด)
 total_tasks = len(filtered_df)
-completed_tasks = len(filtered_df[filtered_df['Status'].str.lower() == 'closed'])
-overdue_tasks = len(filtered_df[filtered_df['Status'].str.lower() == 'overdue'])
+completed_tasks = len(filtered_df[filtered_df[status_col].str.lower() == 'closed'])
+overdue_tasks = len(filtered_df[filtered_df[status_col].str.lower() == 'overdue'])
 
 # คำนวณ % On-time Performance
 on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100.0
@@ -78,39 +83,34 @@ chart_col1, chart_col2 = st.columns(2)
 with chart_col1:
     st.subheader("🍕 สัดส่วนประเภทงาน (Task Ratio)")
     if total_tasks > 0:
-        type_counts = filtered_df['Type'].value_counts().reset_index()
+        type_counts = filtered_df[type_col].value_counts().reset_index()
         type_counts.columns = ['Type', 'Count']
-        
         fig_pie = px.pie(type_counts, values='Count', names='Type', hole=0.4,
                          color_discrete_sequence=px.colors.qualitative.Pastel)
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
-        st.warning("ไม่มีข้อมูลที่จะแสดงกราฟวงกลม")
+        st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟวงกลม")
 
 with chart_col2:
-    st.subheader("📊 สถานะงานแยกตามแผนก (Task Progress by Type)")
+    st.subheader("📊 สถานะงานแยกตามแผนก (Task Progress)")
     if total_tasks > 0:
-        fig_bar = px.histogram(filtered_df, x='Type', color='Status', barmode='stack',
-                               color_discrete_map={'Closed': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444', 'On time': '#10b981'})
+        fig_bar = px.histogram(filtered_df, x=type_col, color=status_col, barmode='stack',
+                               color_discrete_map={'Closed': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.warning("ไม่มีข้อมูลที่จะแสดงกราฟแท่ง")
-
+        st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟแท่ง")
 
 st.markdown("---")
 
 # 5. ส่วนแสดงตารางรายชื่องานที่ Overdue (งานที่เกินกำหนด)
 st.subheader("🚨 รายชื่อ Task ที่เกินกำหนด (Overdue Task List)")
-
-# ค้นหาคอลัมน์ที่มีอยู่ในข้อมูลจริงเพื่อป้องกัน Error กรณีชื่อคอลัมน์พิมพ์เล็ก-ใหญ่ไม่ตรงกัน
-available_cols = filtered_df.columns.tolist()
-desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date']
+desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date', 'Type', 'Task', 'PRODUCT', 'Target Date'.lower()]
 display_cols = [col for col in desired_cols if col in available_cols]
 
-overdue_list = filtered_df[filtered_df['Status'].str.lower() == 'overdue'][display_cols]
-
-if not overdue_list.empty:
-    st.dataframe(overdue_list, use_container_width=True)
-else:
-    st.success("🎉 ยอดเยี่ยมมาก! ไม่มีงานที่เกินกำหนด (Overdue) ในขณะนี้")
+if display_cols:
+    overdue_list = filtered_df[filtered_df[status_col].str.lower() == 'overdue'][display_cols]
+    if not overdue_list.empty:
+        st.dataframe(overdue_list, use_container_width=True)
+    else:
+        st.success("🎉 ยอดเยี่ยมมาก! ไม่มีงานที่เกินกำหนด (Overdue) ในขณะนี้")
