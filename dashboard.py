@@ -9,20 +9,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันโหลดข้อมูล - สั่งข้ามไปอ่านที่หัวตารางแถวที่ 12 (header=11) ของแท็บ Schedule2026
+# 2. ฟังก์ชันโหลดข้อมูล - อ่านหัวตารางแถวที่ 12 (header=11) ของแท็บ Schedule2026
 @st.cache_data(ttl=10)
 def load_npi_data():
-    # header=11 หมายถึง แถวที่ 12 ของ Excel เพื่อจับหัวตารางตัวจริงพอดีเป๊ะ
     df = pd.read_excel("data.xlsx", sheet_name="Schedule2026", header=11, engine="openpyxl")
     
     # ล้างช่องว่างที่หัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
     
-    # ลบแถวที่เป็นค่าว่างเปล่าจากการจองพื้นที่ตารางออก
+    # ลบแถวที่เป็นค่าว่างเปล่าออก
     df = df.dropna(subset=['Type', 'Status'], how='any')
     
-    # แปลงคอลัมน์สำคัญเป็นข้อความสะอาดๆ ล้างช่องว่างซ้ายขวา
-    important_cols = ['WW', 'Type', 'TASK', 'Customer', 'PIC', 'Status']
+    # แปลงคอลัมน์สำคัญทั้งหมดเป็นข้อความสะอาดๆ
+    important_cols = ['WW', 'Month', 'Type', 'TASK', 'Customer', 'PIC', 'Status', 'Target Date']
     for col in important_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
@@ -31,7 +30,7 @@ def load_npi_data():
     df = df[df['Type'].str.lower() != 'nan']
     df = df[df['Status'].str.lower() != 'nan']
     
-    # ปรับจูนสถานะให้เป็นมาตรฐานเดียวกัน (เช่น ตัวพิมพ์เล็ก-ใหญ่)
+    # ปรับจูนสถานะให้เป็นมาตรฐานเดียวกันเพื่อความแม่นยำในการนับ
     df['Status_Clean'] = df['Status'].str.lower()
     df.loc[df['Status_Clean'] == 'close', 'Status_Clean'] = 'closed'
     
@@ -41,31 +40,49 @@ def load_npi_data():
 try:
     df = load_npi_data()
 except Exception as e:
-    st.error(f"❌ เกิดข้อผิดพลาดในการอ่านแถวที่ 12: {e}")
-    st.info("💡 คำแนะนำ: โปรดตรวจสอบว่าในไฟล์ Excel แถวที่ 12 มีคอลัมน์ Type และ Status ตรงกันข้ามหรือไม่")
+    st.error(f"❌ เกิดข้อผิดพลาดในการอ่านข้อมูล: {e}")
     st.stop()
 
-# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย) ---
+
+# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย เพิ่มกรองตาม Week / Month) ---
 st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอร์ด")
 
-# 1. ตัวกรองผู้รับผิดชอบ (PIC)
+# 1. ตัวกรองรายเดือน (Month)
+all_months = sorted([m for m in df['Month'].unique().tolist() if m.lower() != 'nan' and m != ''])
+selected_months = st.sidebar.multiselect("📅 เลือกเดือน (Month)", options=all_months, default=all_months)
+
+# 2. ตัวกรองรายสัปดาห์ (WW)
+# ปรับให้เรียงลำดับตามตัวเลขสัปดาห์โดยพยายามแปลงเป็น int เพื่อความสวยงามในการแสดงผล
+all_weeks_raw = [w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != '']
+try:
+    all_weeks = sorted(all_weeks_raw, key=lambda x: int(''.join(filter(str.isdigit, x))) if any(c.isdigit() for c in x) else x)
+except:
+    all_weeks = sorted(all_weeks_raw)
+selected_weeks = st.sidebar.multiselect("📆 เลือกสัปดาห์ (WW)", options=all_weeks, default=all_weeks)
+
+# 3. ตัวกรองผู้รับผิดชอบ (PIC)
 all_pics = sorted([p for p in df['PIC'].unique().tolist() if p.lower() != 'nan' and p != ''])
 selected_pics = st.sidebar.multiselect("👨‍💻 เลือกผู้รับผิดชอบ (PIC)", options=all_pics, default=all_pics)
 
-# 2. ตัวกรองประเภทงาน (Type)
+# 4. ตัวกรองประเภทงาน (Type)
 all_types = sorted([t for t in df['Type'].unique().tolist() if t.lower() != 'nan' and t != ''])
 selected_types = st.sidebar.multiselect("📂 เลือกประเภทงาน (Type)", options=all_types, default=all_types)
 
-# กรองตารางข้อมูลหลักตามเงื่อนไขที่คลิกเลือก
-filtered_df = df[(df['PIC'].isin(selected_pics)) & (df['Type'].isin(selected_types))]
+# สั่งกรองข้อมูลหลักตามเงื่อนไขทุกข้อรวมกัน (Month + Week + PIC + Type)
+filtered_df = df[
+    (df['Month'].isin(selected_months)) &
+    (df['WW'].isin(selected_weeks)) &
+    (df['PIC'].isin(selected_pics)) &
+    (df['Type'].isin(selected_types))
+]
 
 
 # --- MAIN INTERFACE (ส่วนกระดานแสดงผลหลัก) ---
 st.title("🚀 NPI Integration Fronted Task Dashboard")
-st.write("ระบบวิเคราะห์และติดตามสถานะงานของทีม NPI ดึงจากแถวที่ 12 ของตารางข้อมูลดิบ")
+st.write("ระบบวิเคราะห์และติดตามสถานะงานของทีม NPI (รองรับการเจาะลึกข้อมูลรายสัปดาห์และรายเดือน)")
 st.markdown("---")
 
-# 3. ส่วนแสดง KPI Metrics คำนวณยอด
+# 3. ส่วนแสดง KPI Metrics คำนวณยอดตามเงื่อนไขตัวกรอง
 total_tasks = len(filtered_df)
 completed_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'closed'])
 on_process_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'on process'])
@@ -76,7 +93,7 @@ on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric(label="📊 งานทั้งหมดในเงื่อนไข", value=f"{total_tasks} Tasks")
+    st.metric(label="📊 งานทั้งหมดตามช่วงเวลา", value=f"{total_tasks} Tasks")
 with col2:
     st.metric(label="✅ งานที่เสร็จแล้ว (Closed)", value=f"{completed_tasks} Tasks")
 with col3:
@@ -114,15 +131,28 @@ with chart_col2:
 
 st.markdown("---")
 
+# 5. เพิ่มกราฟแนวโน้มภาระงานราย Week เพื่อให้เห็นภาพรวม Timeline (Timeline Trend Chart)
+st.subheader("📈 แนวโน้มสถานะงานรายสัปดาห์ (Weekly Task Trend)")
+if total_tasks > 0:
+    # จัดกลุ่มเพื่อเรียงลำดับสัปดาห์บนกราฟแท่งให้สวยงาม
+    weekly_df = filtered_df.copy()
+    fig_trend = px.histogram(weekly_df, x='WW', color='Status', barmode='group',
+                             color_discrete_map={'Closed': '#22c55e', 'Close': '#22c55e', 'On process': '#3b82f6', 'Overdue': '#ef4444'})
+    fig_trend.update_layout(xaxis_title="สัปดาห์ทำงาน (WW)", yaxis_title="จำนวนงาน (Tasks)", categoryorders={"WW": all_weeks})
+    st.plotly_chart(fig_trend, use_container_width=True)
+else:
+    st.info("ไม่มีข้อมูลแสดงกราฟแนวโน้ม")
 
-# 5. ส่วนแสดงตารางรายชื่องานที่ค้างเกินกำหนด (Overdue)
-st.subheader("🚨 รายรายการงานเกินกำหนดอย่างละเอียด (Overdue Task List)")
+st.markdown("---")
+
+# 6. ส่วนแสดงตารางรายชื่องานที่ค้างเกินกำหนด (Overdue) 
+st.subheader("🚨 รายการงานเกินกำหนดอย่างละเอียดตามช่วงเวลา (Overdue Task List)")
 
 overdue_df = filtered_df[filtered_df['Status_Clean'] == 'overdue']
 
 if not overdue_df.empty:
-    display_cols = ['WW', 'Type', 'TASK', 'Customer', 'PIC', 'Target Date']
+    display_cols = ['Month', 'WW', 'Type', 'TASK', 'Customer', 'PIC', 'Target Date']
     available_display = [c for c in display_cols if c in overdue_df.columns]
     st.dataframe(overdue_df[available_display].reset_index(drop=True), use_container_width=True)
 else:
-    st.success("🎉 ยอดเยี่ยมมาก! สมาชิกทุกคนเคลียร์งานตามกำหนดเรียบร้อย ไม่พบงานค้าง Overdue ในขณะนี้")
+    st.success("🎉 ยอดเยี่ยมมาก! ไม่พบงานค้าง Overdue ในสัปดาห์/เดือนที่เลือก")
