@@ -44,14 +44,14 @@ except Exception as e:
     st.stop()
 
 
-# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย เพิ่มกรองตาม Week / Month แบบแก้ Error ล้างค่าเรียงลำดับ) ---
+# --- SIDEBAR FILTERS (แถบกรองข้อมูลด้านซ้าย สามารถเลือกแยก/เลือกทั้งหมดได้อิสระ) ---
 st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอร์ด")
 
 # 1. ตัวกรองรายเดือน (Month)
 all_months = sorted([m for m in df['Month'].unique().tolist() if m.lower() != 'nan' and m != ''])
 selected_months = st.sidebar.multiselect("📅 เลือกเดือน (Month)", options=all_months, default=all_months)
 
-# 2. ตัวกรองรายสัปดาห์ (WW) - เปลี่ยนมาใช้การเรียงข้อความธรรมดา ป้องกันโค้ดเอ๋อ
+# 2. ตัวกรองรายสัปดาห์ (WW) - เตรียมตัวแปร all_weeks แก้ไขจุด NameError เรียบร้อย
 all_weeks = sorted([w for w in df['WW'].unique().tolist() if w.lower() != 'nan' and w != ''])
 selected_weeks = st.sidebar.multiselect("📆 เลือกสัปดาห์ (WW)", options=all_weeks, default=all_weeks)
 
@@ -63,7 +63,7 @@ selected_pics = st.sidebar.multiselect("👨‍💻 เลือกผู้ร�
 all_types = sorted([t for t in df['Type'].unique().tolist() if t.lower() != 'nan' and t != ''])
 selected_types = st.sidebar.multiselect("📂 เลือกประเภทงาน (Type)", options=all_types, default=all_types)
 
-# สั่งกรองข้อมูลหลักตามเงื่อนไขทุกข้อรวมกัน (Month + Week + PIC + Type)
+# สั่งกรองข้อมูลหลักรวมกันทุกเงื่อนไข
 filtered_df = df[
     (df['Month'].isin(selected_months)) &
     (df['WW'].isin(selected_weeks)) &
@@ -82,9 +82,6 @@ total_tasks = len(filtered_df)
 completed_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'closed'])
 on_process_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'on process'])
 overdue_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'overdue'])
-
-# คำนวณร้อยละความสำเร็จ (On-time Performance)
-on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100.0
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
