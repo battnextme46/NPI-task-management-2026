@@ -2,142 +2,126 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. ตั้งค่าหน้าเว็บให้แสดงผลเต็มจอแบบกว้าง (Wide Layout)
+# 1. ตั้งค่าหน้าเว็บแบบกว้างเต็มจอ
 st.set_page_config(
-    page_title="NPI Integration Dashboard", 
+    page_title="NPI Fronted Task Dashboard", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 2. ฟังก์ชันดึงข้อมูลแบบปลอดภัยสูง ล้างข้อผิดพลาดจากช่องว่างและค่าว่างอัตโนมัติ
+# 2. ฟังก์ชันโหลดข้อมูล เจาะจงแท็บ Schedule2026 เท่านั้น
 @st.cache_data(ttl=10)
-def load_data_from_github():
-    # บังคับให้อ่านแท็บแรกสุด (หรือเปลี่ยนเลข 0 เป็นชื่อแท็บ "Schedule2026" ได้ถ้าข้อมูลดิบไม่แสดง)
-    df = pd.read_excel("data.xlsx", sheet_name=0, engine="openpyxl")
+def load_npi_data():
+    # โหลดไฟล์ data.xlsx เจาะแท็บข้อมูลดิบหลัก
+    df = pd.read_excel("data.xlsx", sheet_name="Schedule2026", engine="openpyxl")
     
-    # ล้างช่องว่างที่หัวคอลัมน์
+    # ล้างช่องว่างหัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
     
-    # ลบแถวหรือคอลัมน์ที่เป็นค่าว่างเปล่าจากการจองพื้นที่ตารางใน Excel ออกไปให้หมด
-    df = df.dropna(how='all')
+    # ดึงคอลัมน์สำคัญที่ต้องใช้ และลบแถวที่ไม่มีข้อมูลจริงทิ้ง
+    important_cols = ['Type', 'TASK', 'Customer', 'PIC', 'Target Date', 'Status']
+    # คืนค่ากลับเฉพาะคอลัมน์ที่มีอยู่จริง
+    existing_cols = [c for c in important_cols if c in df.columns]
+    df = df.dropna(subset=['Type', 'Status'], how='any')
+    
+    # แปลงข้อมูลเป็นข้อความสะอาดๆ
+    for col in existing_cols:
+        df[col] = df[col].astype(str).str.strip()
+        
+    # กรองแถวที่เป็นค่าว่างหรือหัวตารางจำลองออก
+    df = df[df['Type'].str.lower() != 'nan']
+    df = df[df['Status'].str.lower() != 'nan']
     
     return df
 
-# โหลดข้อมูลเข้ามาเก็บไว้ในตัวแปรชื่อ df
+# เรียกใช้งานฟังก์ชัน
 try:
-    df = load_data_from_github()
+    df = load_npi_data()
 except Exception as e:
-    st.error(f"❌ ระบบยังหาไฟล์ใน GitHub ไม่เจอ: {e}")
+    st.error(f"❌ โครงสร้างข้อมูลไม่ถูกต้องหรือหาแท็บ 'Schedule2026' ไม่เจอ: {e}")
     st.stop()
 
-# --- ค้นหาคอลัมน์ที่มีอยู่จริงในหน้างาน เพื่อป้องกัน Error คอลัมน์พิมพ์ไม่เหมือนกัน ---
-available_cols = df.columns.tolist()
+# --- SIDEBAR FILTERS (แถบควบคุมด้านซ้าย) ---
+st.sidebar.header("🔍 ตัวกรองแดชบอร์ด")
 
-# ตรวจสอบหาคอลัมน์ Type
-type_col = None
-for col in ['Type', 'TYPE', 'type', 'Job Type']:
-    if col in available_cols:
-        type_col = col
-        break
-if not type_col:
-    # ถ้าหาไม่เจอจริงๆ บังคับเอาคอลัมน์แรกที่มีข้อมูลที่ไม่ใช่ unnamed
-    valid_cols = [c for c in available_cols if "Unnamed" not in c]
-    type_col = valid_cols[0] if valid_cols else available_cols[0]
+# 1. ตัวกรองผู้รับผิดชอบ (PIC)
+all_pics = sorted(df['PIC'].unique().tolist())
+selected_pics = st.sidebar.multiselect("👨‍💻 เลือกผู้รับผิดชอบ (PIC)", options=all_pics, default=all_pics)
 
-# ตรวจสอบหาคอลัมน์ Status
-status_col = None
-for col in ['Status', 'STATUS', 'status', 'งาน']:
-    if col in available_cols:
-        status_col = col
-        break
-if not status_col:
-    valid_cols = [c for c in available_cols if "Unnamed" not in c and c != type_col]
-    status_col = valid_cols[0] if valid_cols else available_cols[1]
+# 2. ตัวกรองประเภทงาน (Type)
+all_types = sorted(df['Type'].unique().tolist())
+selected_types = st.sidebar.multiselect("📂 เลือกประเภทงาน (Type)", options=all_types, default=all_types)
 
-# แปลงข้อมูลในคอลัมน์หลักเป็น String และล้างค่า nan ป้องกันการคำนวณพัง
-df[type_col] = df[type_col].astype(str).str.strip()
-df[status_col] = df[status_col].astype(str).str.strip()
+# กรองข้อมูลตามเงื่อนไขที่เลือก
+filtered_df = df[(df['PIC'].isin(selected_pics)) & (df['Type'].isin(selected_types))]
 
-# คัดกรองเอาบรรทัดที่คำว่า 'nan' หรือช่องว่างทิ้งไป
-df = df[df[type_col].str.lower() != 'nan']
-df = df[df[type_col] != '']
-df = df[df[status_col].str.lower() != 'nan']
-df = df[df[status_col] != '']
 
-# --- SIDEBAR FILTERS (เมนูด้านซ้ายสำหรับกรองข้อมูล) ---
-st.sidebar.header("🔍 คัดกรองข้อมูล Task")
-all_types = sorted(df[type_col].unique().tolist())
-
-if all_types:
-    selected_types = st.sidebar.multiselect("เลือกประเภทงาน", options=all_types, default=all_types)
-    filtered_df = df[df[type_col].isin(selected_types)]
-else:
-    st.sidebar.warning("⚠️ ไม่พบประเภทงานในตาราง Excel ของคุณ")
-    filtered_df = df
-
-# --- MAIN INTERFACE (ส่วนแสดงผลหลักตรงกลางหน้าเว็บ) ---
-st.title("🚀 NPI Integration Task Dashboard")
-st.write("ระบบดึงข้อมูลและประมวลผลความคืบหน้าของงานทีม NPI")
+# --- MAIN INTERFACE (ส่วนแสดงผลหลัก) ---
+st.title("🚀 NPI Integration Fronted Task Dashboard")
+st.write("ข้อมูลวิเคราะห์ความคืบหน้าแบบเรียลไทม์ ดึงจากแท็บข้อมูลดิบ Schedule2026")
 st.markdown("---")
 
-# 3. ส่วนแสดง KPI Metrics (คำนวณแบบปลอดภัย)
+# 3. ส่วนแสดง KPI Metrics
 total_tasks = len(filtered_df)
-completed_tasks = len(filtered_df[filtered_df[status_col].str.lower() == 'closed'])
-overdue_tasks = len(filtered_df[filtered_df[status_col].str.lower() == 'overdue'])
+# นับตามสถานะ (ปรับตัวอักษรเล็กใหญ่ให้ยืดหยุ่น)
+completed_tasks = len(filtered_df[filtered_df['Status'].str.lower() == 'closed'])
+on_process_tasks = len(filtered_df[filtered_df['Status'].str.lower() == 'on process'])
+overdue_tasks = len(filtered_df[filtered_df['Status'].str.lower() == 'overdue'])
 
 on_time_perf = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 100.0
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric(label="📊 จำนวนงานทั้งหมด", value=f"{total_tasks} Tasks")
+    st.metric(label="📊 งานทั้งหมดในเงื่อนไข", value=f"{total_tasks} Tasks")
 with col2:
-    st.metric(label="✅ งานที่เสร็จสิ้นแล้ว (Closed)", value=f"{completed_tasks} Tasks")
+    st.metric(label="✅ เสร็จสิ้น (Closed)", value=f"{completed_tasks} Tasks")
 with col3:
-    st.metric(label="⚠️ งานที่เกินกำหนด (Overdue)", value=f"{overdue_tasks} Tasks")
+    st.metric(label="⏳ กำลังดำเนินการ", value=f"{on_process_tasks} Tasks")
 with col4:
-    st.metric(label="📈 On-time Performance", value=f"{on_time_perf:.1f}%")
+    st.metric(label="🚨 เกินกำหนด (Overdue)", value=f"{overdue_tasks} Tasks", delta=f"{overdue_tasks} งานค้าง", delta_color="inverse")
 
 st.markdown("---")
 
-# 4. ส่วนแสดงผลกราฟสไตล์ Modern (แบ่งเป็น 2 คอลัมน์ซ้ายขวา)
+
+# 4. ส่วนแสดงผลกราฟชั้นสูง
 chart_col1, chart_col2 = st.columns(2)
 
 with chart_col1:
-    st.subheader("🍕 สัดส่วนประเภทงาน (Task Ratio)")
+    st.subheader("🍕 สัดส่วนปริมาณงานแยกตามประเภท (Task Type)")
     if total_tasks > 0:
-        type_counts = filtered_df[type_col].value_counts().reset_index()
+        type_counts = filtered_df['Type'].value_counts().reset_index()
         type_counts.columns = ['Type', 'Count']
         fig_pie = px.pie(type_counts, values='Count', names='Type', hole=0.4,
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+                         color_discrete_sequence=px.colors.qualitative.Safe)
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟวงกลม")
 
 with chart_col2:
-    st.subheader("📊 สถานะงานแยกตามแผนก (Task Progress)")
+    st.subheader("👨‍💻 ปริมาณงานและสถานะแยกตามรายบุคคล (PIC Progress)")
     if total_tasks > 0:
-        fig_bar = px.histogram(filtered_df, x=type_col, color=status_col, barmode='stack',
-                               color_discrete_map={'closed': '#22c55e', 'on process': '#3b82f6', 'overdue': '#ef4444'})
+        # สร้างกราฟแท่งแนวนอนแจกแจงตาม PIC และซ้อนด้วยสถานะงาน
+        fig_bar = px.histogram(filtered_df, y='PIC', color='Status', barmode='stack', orientation='h',
+                               color_discrete_map={'closed': '#22c55e', 'on process': '#3b82f6', 'overdue': '#ef4444', 'on time': '#10b981'})
+        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="จำนวนงาน (Tasks)")
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.warning("ไม่มีข้อมูลสำหรับแสดงกราฟแท่ง")
 
 st.markdown("---")
 
-# 5. ส่วนแสดงตารางรายชื่องานที่ Overdue (งานที่เกินกำหนด)
-st.subheader("🚨 รายชื่อ Task ที่เกินกำหนด (Overdue Task List)")
-desired_cols = ['Type', 'Task', 'PRODUCT', 'Target Date', 'Target_Date', 'Product']
-display_cols = [col for col in desired_cols if col in available_cols]
 
-if not display_cols:
-    display_cols = available_cols[:4]  # ดึง 4 คอลัมน์แรกมาแสดงกรณีชื่อไม่ตรงล็อก
+# 5. ส่วนแสดงตารางรายชื่องานที่ค้างเกินกำหนด (Overdue) ปัดคอลัมน์สวยงาม
+st.subheader("🚨 รายการงานเกินกำหนดอย่างละเอียด (Overdue Task List)")
 
-if total_tasks > 0:
-    overdue_list = filtered_df[filtered_df[status_col].str.lower() == 'overdue'][display_cols]
-    if not overdue_list.empty:
-        st.dataframe(overdue_list, use_container_width=True)
-    else:
-        st.success("🎉 ยอดเยี่ยมมาก! ไม่มีงานที่เกินกำหนด (Overdue) ในขณะนี้")
+overdue_df = filtered_df[filtered_df['Status'].str.lower() == 'overdue']
+
+if not overdue_df.empty:
+    # เลือกเฉพาะคอลัมน์สำคัญมาโชว์ให้คนในทีมตามงานง่าย
+    display_cols = ['Type', 'TASK', 'Customer', 'PIC', 'Target Date']
+    available_display = [c for c in display_cols if c in overdue_df.columns]
+    
+    st.dataframe(overdue_df[available_display].reset_index(drop=True), use_container_width=True)
 else:
-    st.info("ไม่มีข้อมูลแสดงรายการงานล่าช้า")
+    st.success("🎉 ยอดเยี่ยม! ไม่พบงานค้างที่เกินกำหนดส่งในระบบสำหรับเงื่อนไขนี้")
