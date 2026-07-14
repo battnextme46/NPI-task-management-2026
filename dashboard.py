@@ -15,7 +15,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
 def load_data():
-    # แก้ไข: ไม่ระบุชื่อ worksheet เพื่อให้ระบบดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
+    # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
     df = conn.read(ttl="5s")
     
     # ล้างช่องว่างหัวคอลัมน์
@@ -142,7 +142,8 @@ with tab_management:
             new_target = st.date_input("กำหนดส่ง (Target Date)")
             new_status = st.selectbox("สถานะแรกเริ่ม (Status)", ["On process", "Closed", "Overdue"])
             
-            submitted = st.form_submit_with_button("💾 กดบันทึกลง Google Sheets")
+            # แก้ไขจาก st.form_submit_with_button เป็น st.form_submit_button เพื่อความถูกต้อง
+            submitted = st.form_submit_button("💾 กดบันทึกลง Google Sheets")
             
             if submitted:
                 if not new_ww or not new_task:
