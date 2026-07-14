@@ -15,7 +15,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
 def load_data():
-    # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
+    # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติเพื่อความเสถียร
     df = conn.read(ttl="5s")
     
     # ล้างช่องว่างหัวคอลัมน์
@@ -142,7 +142,6 @@ with tab_management:
             new_target = st.date_input("กำหนดส่ง (Target Date)")
             new_status = st.selectbox("สถานะแรกเริ่ม (Status)", ["On process", "Closed", "Overdue"])
             
-            # แก้ไขจาก st.form_submit_with_button เป็น st.form_submit_button เพื่อความถูกต้อง
             submitted = st.form_submit_button("💾 กดบันทึกลง Google Sheets")
             
             if submitted:
@@ -164,7 +163,8 @@ with tab_management:
                     if 'Status_Clean' in updated_df.columns:
                         updated_df = updated_df.drop(columns=['Status_Clean'])
                         
-                    conn.update(data=updated_df)
+                    # แก้ไข: ใส่ชื่อแท็บล็อกเป้าหมายให้ชัดเจนตอนสั่ง Update ข้อมูล
+                    conn.update(worksheet="Schedule2026", data=updated_df)
                     st.success("✅ บันทึกข้อมูลงานใหม่ลง Google Sheets เรียบร้อย! กรุณารีเฟรชเพื่ออัปเดต")
                     st.cache_data.clear()
                     
@@ -190,7 +190,8 @@ with tab_management:
                 if 'Display' in save_df.columns:
                     save_df = save_df.drop(columns=['Display'])
                     
-                conn.update(data=save_df)
+                # แก้ไข: ใส่ชื่อแท็บล็อกเป้าหมายให้ชัดเจนตอนสั่ง Update ข้อมูลเช่นกัน
+                conn.update(worksheet="Schedule2026", data=save_df)
                 st.success(f"🎉 อัปเดตงานเป็นสถานะ '{new_status_val}' เรียบร้อยแล้วบน Google Sheets!")
                 st.cache_data.clear()
         else:
