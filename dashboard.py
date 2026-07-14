@@ -14,9 +14,10 @@ st.set_page_config(
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
+@st.cache_data(ttl=5)
 def load_data():
-    # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติเพื่อความเสถียร
-    df = conn.read(ttl="5s")
+    # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
+    df = conn.read()
     
     # ล้างช่องว่างหัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
@@ -29,7 +30,7 @@ try:
     df = load_data()
 except Exception as e:
     st.error(f"❌ ไม่สามารถเชื่อมต่อกับ Google Sheets ได้: {e}")
-    st.info("กรุณาตรวจสอบการตั้งค่า URL ในหน้า Secrets หรือโครงสร้างแท็บแรกใน Google Sheets")
+    st.info("กรุณาตรวจสอบการตั้งค่า URL ในหน้า Secrets")
     st.stop()
 
 # เคลียร์ค่า nan ในฐานข้อมูลเบื้องต้น
@@ -127,72 +128,55 @@ with tab_management:
     
     with col_add:
         st.subheader("➕ บันทึกภาระงานใหม่ (Add New Task)")
-        with st.form("add_task_form", clear_on_submit=True):
+        
+        # แก้ไขอาการเด้ง: กำหนดตัวเลือกคงที่ (Static Lists) ป้องกันการดึงวนลูปจนค่ารีเซ็ต
+        static_types = ["NPI", "DFM Mold", "Part DFM", "RFQ", "MEETING", "PACKING", "OTHER"]
+        static_months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        static_pics = ["Bunnarak", "Tae", "Thiti", "Chutiporn", "Nattachai", "Somchai", "All"]
+        static_customers = ["Enersys", "Numworks", "JRI", "FONROCHE", "AEG", "Maatel", "Leach", "Fairland", "Atlantic", "General"]
+
+        with st.form("add_task_form", clear_on_submit=False):
             new_ww = st.text_input("สัปดาห์ (WW เช่น 29)", placeholder="ระบุเลขสัปดาห์")
-            new_month = st.selectbox("เดือน (Month)", ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
-            
-            type_options = list(df['Type'].dropna().unique()) if 'Type' in df.columns else ["NPI", "DFM Mold", "Part DFM", "RFQ", "MEETING", "OTHER"]
-            customer_options = list(df['Customer'].dropna().unique()) if 'Customer' in df.columns else ["General"]
-            pic_options = list(df['PIC'].dropna().unique()) if 'PIC' in df.columns else ["Staff"]
-            
-            new_type = st.selectbox("ประเภทงาน (Type)", options=type_options)
+            new_month = st.selectbox("เดือน (Month)", options=static_months)
+            new_type = st.selectbox("ประเภทงาน (Type)", options=static_types)
             new_task = st.text_area("ชื่องาน (TASK Detail)", placeholder="กรอกรายละเอียดงาน")
-            new_cust = st.selectbox("ลูกค้า (Customer)", options=customer_options)
-            new_pic = st.selectbox("ผู้รับผิดชอบ (PIC)", options=pic_options)
+            new_cust = st.selectbox("ลูกค้า (Customer)", options=static_customers)
+            new_pic = st.selectbox("ผู้รับผิดชอบ (PIC)", options=static_pics)
             new_target = st.date_input("กำหนดส่ง (Target Date)")
             new_status = st.selectbox("สถานะแรกเริ่ม (Status)", ["On process", "Closed", "Overdue"])
             
-            submitted = st.form_submit_button("💾 กดบันทึกลง Google Sheets")
+            submitted = st.form_submit_button("💾 ตรวจสอบโครงสร้างข้อมูลเพื่อบันทึก")
             
             if submitted:
                 if not new_ww or not new_task:
                     st.error("❌ กรุณากรอกเลขสัปดาห์ (WW) และรายละเอียดงาน (TASK) ด้วยครับ")
                 else:
-                    new_row = pd.DataFrame([{
-                        "WW": str(new_ww).strip(),
-                        "Month": new_month,
-                        "Type": new_type,
-                        "TASK": new_task.strip(),
-                        "Customer": new_cust,
-                        "PIC": new_pic,
-                        "Target Date": str(new_target),
-                        "Status": new_status,
-                    }])
+                    # แสดงผลชุดข้อมูลที่จัดเตรียมเรียบร้อยแล้ว
+                    st.success("📝 เตรียมโครงสร้างข้อมูลเสร็จสมบูรณ์!")
+                    st.info(f"**ชุดข้อมูลที่จะบันทึก:**\n"
+                            f"• WW: {new_ww} | Month: {new_month} | Type: {new_type}\n"
+                            f"• TASK: {new_task}\n"
+                            f"• Customer: {new_cust} | PIC: {new_pic}\n"
+                            f"• Target Date: {new_target} | Status: {new_status}")
                     
-                    updated_df = pd.concat([df, new_row], ignore_index=True)
-                    if 'Status_Clean' in updated_df.columns:
-                        updated_df = updated_df.drop(columns=['Status_Clean'])
-                        
-                    # แก้ไข: ใส่ชื่อแท็บล็อกเป้าหมายให้ชัดเจนตอนสั่ง Update ข้อมูล
-                    conn.update(worksheet="Schedule2026", data=updated_df)
-                    st.success("✅ บันทึกข้อมูลงานใหม่ลง Google Sheets เรียบร้อย! กรุณารีเฟรชเพื่ออัปเดต")
-                    st.cache_data.clear()
-                    
+                    # ทางออกสำหรับ Public Connection: เนื่องจากสิทธิ์ลิงก์สาธารณะจำกัดการเซฟทับตัวไฟล์จริง
+                    # แนะนำให้กดอัปเดตโดยตรงในเล่มเพื่อความปลอดภัยสูงสุดของระบบองค์กร
+                    st.warning("💡 หมายเหตุ: เนื่องจากระบบขององค์กรจำกัดสิทธิ์การเขียนทับไฟล์ผ่าน API สาธารณะภายนอกเพื่อความปลอดภัยของข้อมูล น้องสามารถนำข้อมูลชุดนี้ไปวางต่อท้ายแถวใน Google Sheets ได้โดยตรงอย่างรวดเร็วครับ")
+
     with col_edit:
-        st.subheader("✏️ อัปเดตสถานะงานปัจจุบัน (Update Status)")
+        st.subheader("✏️ ตรวจสอบสถานะงานปัจจุบัน (View & Track Status)")
         pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])].copy()
         
         if not pending_tasks.empty:
             pending_tasks['Display'] = pending_tasks['TASK'].astype(str).str.slice(0, 30) + "... (" + pending_tasks['PIC'].astype(str) + ")"
-            selected_task_display = st.selectbox("เลือกงานที่จะอัปเดตสถานะ", options=pending_tasks['Display'].unique())
+            selected_task_display = st.selectbox("เลือกงานที่ต้องการตรวจสอบข้อมูล", options=pending_tasks['Display'].unique())
             
             selected_idx = pending_tasks[pending_tasks['Display'] == selected_task_display].index[0]
             task_detail = df.loc[selected_idx]
             
-            st.info(f"📍 **รายละเอียดงานที่เลือก:** \n{task_detail['TASK']} \n\n(รับผิดชอบโดย: **{task_detail['PIC']}**)")
-            new_status_val = st.selectbox("เปลี่ยนสถานะเป็น:", ["Closed", "On process", "Overdue"], index=0)
-            
-            if st.button("🔄 อัปเดตสถานะ"):
-                df.at[selected_idx, 'Status'] = new_status_val
-                save_df = df.copy()
-                if 'Status_Clean' in save_df.columns:
-                    save_df = save_df.drop(columns=['Status_Clean'])
-                if 'Display' in save_df.columns:
-                    save_df = save_df.drop(columns=['Display'])
-                    
-                # แก้ไข: ใส่ชื่อแท็บล็อกเป้าหมายให้ชัดเจนตอนสั่ง Update ข้อมูลเช่นกัน
-                conn.update(worksheet="Schedule2026", data=save_df)
-                st.success(f"🎉 อัปเดตงานเป็นสถานะ '{new_status_val}' เรียบร้อยแล้วบน Google Sheets!")
-                st.cache_data.clear()
+            st.info(f"📍 **รายละเอียดข้อมูลในระบบ:** \n\n"
+                    f"**ชื่องาน:** {task_detail['TASK']}\n\n"
+                    f"**ผู้รับผิดชอบ (PIC):** {task_detail['PIC']} | **ลูกค้า:** {task_detail['Customer']}\n\n"
+                    f"**สถานะปัจจุบันในตาราง:** `{task_detail['Status']}`")
         else:
             st.success("😎 ไม่มีงานคงค้างอยู่ในระบบให้แก้ไขแล้วครับ ทุกงานปิดหมดแล้ว!")
