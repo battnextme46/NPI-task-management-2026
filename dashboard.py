@@ -10,18 +10,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. เชื่อมต่อ Google Sheets ด้วยคำสั่งแบบดึงชื่อตรงจากประเภท gsheets
+# 2. เชื่อมต่อ Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
 def load_data():
-    # ดึงข้อมูลจากแท็บ Schedule2026
-    df = conn.read(worksheet="Schedule2026", ttl="5s")
+    # แก้ไข: ไม่ระบุชื่อ worksheet เพื่อให้ระบบดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
+    df = conn.read(ttl="5s")
     
     # ล้างช่องว่างหัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
     
-    # ลบแถวที่ว่างทั้งหมดออกเพื่อไม่ให้เปลืองหน่วยความจำ
+    # ลบแถวที่ไม่มีข้อมูลสำคัญออกเพื่อความเสถียร
     df = df.dropna(subset=['Type', 'Status'], how='any')
     return df
 
@@ -29,7 +29,7 @@ try:
     df = load_data()
 except Exception as e:
     st.error(f"❌ ไม่สามารถเชื่อมต่อกับ Google Sheets ได้: {e}")
-    st.info("กรุณาตรวจสอบการตั้งค่า Spreadsheet ID ในหน้า Secrets")
+    st.info("กรุณาตรวจสอบการตั้งค่า URL ในหน้า Secrets หรือโครงสร้างแท็บแรกใน Google Sheets")
     st.stop()
 
 # เคลียร์ค่า nan ในฐานข้อมูลเบื้องต้น
@@ -43,7 +43,6 @@ tab_dashboard, tab_management = st.tabs(["📊 Interactive Dashboard", "📝 Inp
 # TAB 1: INTERACTIVE DASHBOARD (แสดงผลแดชบอร์ด)
 # ==========================================
 with tab_dashboard:
-    # --- SIDEBAR FILTERS ---
     st.sidebar.header("🔍 ตัวกรองข้อมูลแดชบอร์ด")
     
     all_months = sorted([m for m in df['Month'].unique().astype(str).tolist() if m != 'nan' and m != ''])
@@ -70,7 +69,6 @@ with tab_dashboard:
     st.write("ระบบวิเคราะห์และกรอกข้อมูลงานทีม NPI แบบเบ็ดเสร็จ (Real-time Database)")
     st.markdown("---")
     
-    # ส่วนแสดงยอด KPI
     total_tasks = len(filtered_df)
     completed_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'closed'])
     on_process_tasks = len(filtered_df[filtered_df['Status_Clean'] == 'on process'])
@@ -88,7 +86,6 @@ with tab_dashboard:
         
     st.markdown("---")
     
-    # ส่วนกางแผนภูมิเวทีวิเคราะห์
     chart_col1, chart_col2 = st.columns(2)
     with chart_col1:
         st.subheader("🍕 สัดส่วนประเภทงาน (Task Type)")
@@ -111,7 +108,6 @@ with tab_dashboard:
 
     st.markdown("---")
     
-    # แสดงตาราง Overdue รายละเอียดด้านล่าง
     st.subheader("🚨 รายการงานเกินกำหนด (Overdue Task List)")
     overdue_df = filtered_df[filtered_df['Status_Clean'] == 'overdue']
     if not overdue_df.empty:
@@ -129,14 +125,12 @@ with tab_management:
     
     col_add, col_edit = st.columns([1, 1])
     
-    # ------------------ ส่วนเพิ่มงานใหม่ (Add Task) ------------------
     with col_add:
         st.subheader("➕ บันทึกภาระงานใหม่ (Add New Task)")
         with st.form("add_task_form", clear_on_submit=True):
             new_ww = st.text_input("สัปดาห์ (WW เช่น 29)", placeholder="ระบุเลขสัปดาห์")
             new_month = st.selectbox("เดือน (Month)", ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
             
-            # ดึงประเภทและลูกค้าเดิมที่มีในฐานข้อมูลมาเป็นตัวเลือก
             type_options = list(df['Type'].dropna().unique()) if 'Type' in df.columns else ["NPI", "DFM Mold", "Part DFM", "RFQ", "MEETING", "OTHER"]
             customer_options = list(df['Customer'].dropna().unique()) if 'Customer' in df.columns else ["General"]
             pic_options = list(df['PIC'].dropna().unique()) if 'PIC' in df.columns else ["Staff"]
@@ -154,7 +148,6 @@ with tab_management:
                 if not new_ww or not new_task:
                     st.error("❌ กรุณากรอกเลขสัปดาห์ (WW) และรายละเอียดงาน (TASK) ด้วยครับ")
                 else:
-                    # สร้างตาราง Row ใหม่เตรียมนำไปต่อท้าย
                     new_row = pd.DataFrame([{
                         "WW": str(new_ww).strip(),
                         "Month": new_month,
@@ -166,52 +159,38 @@ with tab_management:
                         "Status": new_status,
                     }])
                     
-                    # นำข้อมูลใหม่ไปต่อท้ายก้อนเก่า
                     updated_df = pd.concat([df, new_row], ignore_index=True)
-                    # ลบคอลัมน์คำนวณเบื้องต้นที่สร้างขึ้นชั่วคราวออกก่อนเซฟ
                     if 'Status_Clean' in updated_df.columns:
                         updated_df = updated_df.drop(columns=['Status_Clean'])
                         
-                    # สั่งเขียนทับลง Google Sheets
-                    conn.update(worksheet="Schedule2026", data=updated_df)
+                    conn.update(data=updated_df)
                     st.success("✅ บันทึกข้อมูลงานใหม่ลง Google Sheets เรียบร้อย! กรุณารีเฟรชเพื่ออัปเดต")
-                    st.cache_data.clear() # สั่งล้าง Cache เพื่อดึงค่าใหม่
+                    st.cache_data.clear()
                     
-    # ------------------ ส่วนแก้ไขสถานะงานที่มีอยู่แล้ว (Update Task Status) ------------------
     with col_edit:
         st.subheader("✏️ อัปเดตสถานะงานปัจจุบัน (Update Status)")
-        
-        # ค้นหางานที่ยังไม่เสร็จ (On process / Overdue) เพื่อเอามาแสดงให้เลือกอัปเดต
         pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])].copy()
         
         if not pending_tasks.empty:
-            # ดึงข้อความมาสับเปลี่ยนให้สั้นกระชับไม่เกิน 30 ตัวอักษร
             pending_tasks['Display'] = pending_tasks['TASK'].astype(str).str.slice(0, 30) + "... (" + pending_tasks['PIC'].astype(str) + ")"
             selected_task_display = st.selectbox("เลือกงานที่จะอัปเดตสถานะ", options=pending_tasks['Display'].unique())
             
-            # ค้นหาแถวที่ตรงกับที่ผู้ใช้เลือกในฐานข้อมูลหลัก
             selected_idx = pending_tasks[pending_tasks['Display'] == selected_task_display].index[0]
             task_detail = df.loc[selected_idx]
             
             st.info(f"📍 **รายละเอียดงานที่เลือก:** \n{task_detail['TASK']} \n\n(รับผิดชอบโดย: **{task_detail['PIC']}**)")
-            
-            # มีกล่อง Dropdown ให้เปลี่ยนสถานะ
             new_status_val = st.selectbox("เปลี่ยนสถานะเป็น:", ["Closed", "On process", "Overdue"], index=0)
             
             if st.button("🔄 อัปเดตสถานะ"):
-                # เปลี่ยนค่าในตารางหลัก
                 df.at[selected_idx, 'Status'] = new_status_val
-                
-                # ลบคอลัมน์คำนวณเบื้องต้นออกก่อนเซฟทับ
                 save_df = df.copy()
                 if 'Status_Clean' in save_df.columns:
                     save_df = save_df.drop(columns=['Status_Clean'])
                 if 'Display' in save_df.columns:
                     save_df = save_df.drop(columns=['Display'])
                     
-                # ส่งอัปเดตทับลง Google Sheets
-                conn.update(worksheet="Schedule2026", data=save_df)
+                conn.update(data=save_df)
                 st.success(f"🎉 อัปเดตงานเป็นสถานะ '{new_status_val}' เรียบร้อยแล้วบน Google Sheets!")
-                st.cache_data.clear() # ล้าง Cache
+                st.cache_data.clear()
         else:
             st.success("😎 ไม่มีงานคงค้างอยู่ในระบบให้แก้ไขแล้วครับ ทุกงานปิดหมดแล้ว!")
