@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ทำการเชื่อมต่อ Google Sheets ผ่าน Streamlit Connector
+# 2. ทำการเชื่อมต่อ Google Sheets ผ่าน Streamlit Connector (แก้ไขจุด positional argument เรียบร้อย)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
@@ -137,9 +137,9 @@ with tab_management:
             new_month = st.selectbox("เดือน (Month)", ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
             
             # ดึงประเภทและลูกค้าเดิมที่มีในฐานข้อมูลมาเป็นตัวเลือก
-            type_options = list(df['Type'].dropna().unique())
-            customer_options = list(df['Customer'].dropna().unique())
-            pic_options = list(df['PIC'].dropna().unique())
+            type_options = list(df['Type'].dropna().unique()) if 'Type' in df.columns else ["NPI", "DFM Mold", "Part DFM", "RFQ", "MEETING", "OTHER"]
+            customer_options = list(df['Customer'].dropna().unique()) if 'Customer' in df.columns else ["General"]
+            pic_options = list(df['PIC'].dropna().unique()) if 'PIC' in df.columns else ["Staff"]
             
             new_type = st.selectbox("ประเภทงาน (Type)", options=type_options)
             new_task = st.text_area("ชื่องาน (TASK Detail)", placeholder="กรอกรายละเอียดงาน")
@@ -182,7 +182,7 @@ with tab_management:
         st.subheader("✏️ อัปเดตสถานะงานปัจจุบัน (Update Status)")
         
         # ค้นหางานที่ยังไม่เสร็จ (On process / Overdue) เพื่อเอามาแสดงให้เลือกอัปเดต
-        pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])]
+        pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])].copy()
         
         if not pending_tasks.empty:
             # สร้างตัวเลือกแสดงในรูปแบบ "ชื่องาน - โดย PIC"
@@ -197,9 +197,6 @@ with tab_management:
             
             # มีกล่อง Dropdown ให้เปลี่ยนสถานะ
             new_status_val = st.selectbox("เปลี่ยนสถานะเป็น:", ["Closed", "On process", "Overdue"], index=0)
-            
-            # วันที่เสร็จงานจริง
-            actual_date = st.date_input("วันที่จบงานจริง (หากต้องการระบุ)")
             
             if st.button("🔄 อัปเดตสถานะ"):
                 # เปลี่ยนค่าในตารางหลัก
