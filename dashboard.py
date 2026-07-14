@@ -10,13 +10,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. ทำการเชื่อมต่อ Google Sheets ผ่าน Streamlit Connector (แก้ไขจุด positional argument เรียบร้อย)
-conn = st.connection("gsheets", type=GSheetsConnection)
+# 2. เชื่อมต่อ Google Sheets ด้วยคำสั่งแบบ String มาตรฐาน (ป้องกัน Error positional/type)
+conn = st.connection("gsheets", type="st_gsheets_connection")
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
 def load_data():
     # ดึงข้อมูลจากแท็บ Schedule2026
-    df = conn.read(worksheet="Schedule2026", ttl="5s") # อัปเดตข้อมูลทุกๆ 5 วินาทีเมื่อเปลี่ยนหน้า
+    df = conn.read(worksheet="Schedule2026", ttl="5s")
     
     # ล้างช่องว่างหัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
