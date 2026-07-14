@@ -10,8 +10,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. เชื่อมต่อ Google Sheets ด้วยคำสั่งแบบ String มาตรฐาน (ป้องกัน Error positional/type)
-conn = st.connection("gsheets", type="st_gsheets_connection")
+# 2. เชื่อมต่อ Google Sheets ด้วยคำสั่งแบบดึงชื่อตรงจากประเภท gsheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
 def load_data():
@@ -185,8 +185,8 @@ with tab_management:
         pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])].copy()
         
         if not pending_tasks.empty:
-            # สร้างตัวเลือกแสดงในรูปแบบ "ชื่องาน - โดย PIC"
-            pending_tasks['Display'] = pending_tasks['TASK'].str[:30] + "..." + " (" + pending_tasks['PIC'] + ")"
+            # ดึงข้อความมาสับเปลี่ยนให้สั้นกระชับไม่เกิน 30 ตัวอักษร
+            pending_tasks['Display'] = pending_tasks['TASK'].astype(str).str.slice(0, 30) + "... (" + pending_tasks['PIC'].astype(str) + ")"
             selected_task_display = st.selectbox("เลือกงานที่จะอัปเดตสถานะ", options=pending_tasks['Display'].unique())
             
             # ค้นหาแถวที่ตรงกับที่ผู้ใช้เลือกในฐานข้อมูลหลัก
