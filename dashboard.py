@@ -14,10 +14,9 @@ st.set_page_config(
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ฟังก์ชันดึงข้อมูลจาก Google Sheets
-@st.cache_data(ttl=5)
 def load_data():
     # ดึงข้อมูลจากแท็บแรกสุดของไฟล์โดยอัตโนมัติ
-    df = conn.read()
+    df = conn.read(ttl="5s")
     
     # ล้างช่องว่างหัวคอลัมน์
     df.columns = df.columns.astype(str).str.strip()
@@ -30,7 +29,6 @@ try:
     df = load_data()
 except Exception as e:
     st.error(f"❌ ไม่สามารถเชื่อมต่อกับ Google Sheets ได้: {e}")
-    st.info("กรุณาตรวจสอบการตั้งค่า URL ในหน้า Secrets")
     st.stop()
 
 # เคลียร์ค่า nan ในฐานข้อมูลเบื้องต้น
@@ -129,54 +127,92 @@ with tab_management:
     with col_add:
         st.subheader("➕ บันทึกภาระงานใหม่ (Add New Task)")
         
-        # แก้ไขอาการเด้ง: กำหนดตัวเลือกคงที่ (Static Lists) ป้องกันการดึงวนลูปจนค่ารีเซ็ต
+        # ป้องกันฟอร์มเด้ง: กำหนดตัวเลือกหลักไว้คงที่
         static_types = ["NPI", "DFM Mold", "Part DFM", "RFQ", "MEETING", "PACKING", "OTHER"]
         static_months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         static_pics = ["Bunnarak", "Tae", "Thiti", "Chutiporn", "Nattachai", "Somchai", "All"]
         static_customers = ["Enersys", "Numworks", "JRI", "FONROCHE", "AEG", "Maatel", "Leach", "Fairland", "Atlantic", "General"]
 
-        with st.form("add_task_form", clear_on_submit=False):
-            new_ww = st.text_input("สัปดาห์ (WW เช่น 29)", placeholder="ระบุเลขสัปดาห์")
-            new_month = st.selectbox("เดือน (Month)", options=static_months)
-            new_type = st.selectbox("ประเภทงาน (Type)", options=static_types)
-            new_task = st.text_area("ชื่องาน (TASK Detail)", placeholder="กรอกรายละเอียดงาน")
-            new_cust = st.selectbox("ลูกค้า (Customer)", options=static_customers)
-            new_pic = st.selectbox("ผู้รับผิดชอบ (PIC)", options=static_pics)
-            new_target = st.date_input("กำหนดส่ง (Target Date)")
-            new_status = st.selectbox("สถานะแรกเริ่ม (Status)", ["On process", "Closed", "Overdue"])
-            
-            submitted = st.form_submit_button("💾 ตรวจสอบโครงสร้างข้อมูลเพื่อบันทึก")
-            
-            if submitted:
-                if not new_ww or not new_task:
-                    st.error("❌ กรุณากรอกเลขสัปดาห์ (WW) และรายละเอียดงาน (TASK) ด้วยครับ")
-                else:
-                    # แสดงผลชุดข้อมูลที่จัดเตรียมเรียบร้อยแล้ว
-                    st.success("📝 เตรียมโครงสร้างข้อมูลเสร็จสมบูรณ์!")
-                    st.info(f"**ชุดข้อมูลที่จะบันทึก:**\n"
-                            f"• WW: {new_ww} | Month: {new_month} | Type: {new_type}\n"
-                            f"• TASK: {new_task}\n"
-                            f"• Customer: {new_cust} | PIC: {new_pic}\n"
-                            f"• Target Date: {new_target} | Status: {new_status}")
-                    
-                    # ทางออกสำหรับ Public Connection: เนื่องจากสิทธิ์ลิงก์สาธารณะจำกัดการเซฟทับตัวไฟล์จริง
-                    # แนะนำให้กดอัปเดตโดยตรงในเล่มเพื่อความปลอดภัยสูงสุดของระบบองค์กร
-                    st.warning("💡 หมายเหตุ: เนื่องจากระบบขององค์กรจำกัดสิทธิ์การเขียนทับไฟล์ผ่าน API สาธารณะภายนอกเพื่อความปลอดภัยของข้อมูล น้องสามารถนำข้อมูลชุดนี้ไปวางต่อท้ายแถวใน Google Sheets ได้โดยตรงอย่างรวดเร็วครับ")
+        # สร้างกลไกนอกฟอร์มเพื่อป้องกันอาการเด้งกลับตอนกำลังพิมพ์หรือคลิกเลือกตัวเลือก
+        new_ww = st.text_input("สัปดาห์ (WW เช่น 29)", placeholder="ระบุเลขสัปดาห์", key="input_ww")
+        new_month = st.selectbox("เดือน (Month)", options=static_months, key="input_month")
+        new_type = st.selectbox("ประเภทงาน (Type)", options=static_types, key="input_type")
+        new_task = st.text_area("ชื่องาน (TASK Detail)", placeholder="กรอกรายละเอียดงาน", key="input_task")
+        new_cust = st.selectbox("ลูกค้า (Customer)", options=static_customers, key="input_cust")
+        new_pic = st.selectbox("ผู้รับผิดชอบ (PIC)", options=static_pics, key="input_pic")
+        new_target = st.date_input("กำหนดส่ง (Target Date)", key="input_target")
+        new_status = st.selectbox("สถานะแรกเริ่ม (Status)", ["On process", "Closed", "Overdue"], key="input_status")
+        
+        # ปุ่มกดบันทึกจริงแยกออกมาอิสระ
+        if st.button("💾 บันทึกข้อมูลงานใหม่ลง Google Sheets", type="primary"):
+            if not new_ww or not new_task:
+                st.error("❌ กรุณากรอกเลขสัปดาห์ (WW) และรายละเอียดงาน (TASK) ด้วยครับ")
+            else:
+                with st.spinner("⏳ กำลังส่งข้อมูลไปยัง Google Sheets..."):
+                    try:
+                        # 1. ดึงข้อมูลปัจจุบันมาตั้งต้น
+                        current_df = conn.read()
+                        current_df.columns = current_df.columns.astype(str).str.strip()
+                        
+                        # 2. สร้างแถวใหม่ตามโครงสร้างคอลัมน์เดิมใน Google Sheets เป๊ะ ๆ
+                        new_row_data = {
+                            "WW": str(new_ww).strip(),
+                            "Month": str(new_month),
+                            "Type": str(new_type),
+                            "TASK": str(new_task).strip(),
+                            "Customer": str(new_cust),
+                            "PIC": str(new_pic),
+                            "Target Date": str(new_target),
+                            "Status": str(new_status)
+                        }
+                        
+                        # เติมคอลัมน์อื่น ๆ ในแผ่นงานให้เป็นค่าว่างเพื่อไม่ให้โครงสร้างตารางพัง
+                        for col in current_df.columns:
+                            if col not in new_row_data:
+                                new_row_data[col] = ""
+                                
+                        new_row_df = pd.DataFrame([new_row_data])
+                        
+                        # 3. ต่อข้อมูลเข้าตารางหลัก
+                        updated_df = pd.concat([current_df, new_row_df], ignore_index=True)
+                        
+                        # 4. สั่งเขียนทับกลับไปที่หน้าแรกสุดของ Google Sheets ตัวจริง
+                        conn.update(data=updated_df)
+                        
+                        st.success("🎉 บันทึกข้อมูลงานใหม่ลง Google Sheets เรียบร้อยแล้วครับ!")
+                        st.balloons()
+                        st.cache_data.clear()
+                    except Exception as err:
+                        st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูล: {err}")
+                        st.info("โปรดตรวจสอบว่าสิทธิ์การแชร์ลิงก์ Google Sheets ตั้งเป็น 'Anyone with link' -> 'Editor' แล้วหรือยัง")
 
     with col_edit:
-        st.subheader("✏️ ตรวจสอบสถานะงานปัจจุบัน (View & Track Status)")
+        st.subheader("✏️ อัปเดตสถานะงานปัจจุบัน (Update Task Status)")
         pending_tasks = df[df['Status_Clean'].isin(['on process', 'overdue'])].copy()
         
         if not pending_tasks.empty:
             pending_tasks['Display'] = pending_tasks['TASK'].astype(str).str.slice(0, 30) + "... (" + pending_tasks['PIC'].astype(str) + ")"
-            selected_task_display = st.selectbox("เลือกงานที่ต้องการตรวจสอบข้อมูล", options=pending_tasks['Display'].unique())
+            selected_task_display = st.selectbox("เลือกงานที่จะเปลี่ยนสถานะ", options=pending_tasks['Display'].unique(), key="edit_select_task")
             
             selected_idx = pending_tasks[pending_tasks['Display'] == selected_task_display].index[0]
             task_detail = df.loc[selected_idx]
             
-            st.info(f"📍 **รายละเอียดข้อมูลในระบบ:** \n\n"
-                    f"**ชื่องาน:** {task_detail['TASK']}\n\n"
-                    f"**ผู้รับผิดชอบ (PIC):** {task_detail['PIC']} | **ลูกค้า:** {task_detail['Customer']}\n\n"
-                    f"**สถานะปัจจุบันในตาราง:** `{task_detail['Status']}`")
+            st.info(f"📍 **รายละเอียดงาน:** \n{task_detail['TASK']} \n\n(ผู้รับผิดชอบ: **{task_detail['PIC']}**)")
+            new_status_val = st.selectbox("เปลี่ยนสถานะเป็น:", ["Closed", "On process", "Overdue"], index=0, key="edit_new_status")
+            
+            if st.button("🔄 อัปเดตสถานะลงตาราง"):
+                with st.spinner("⏳ กำลังเปลี่ยนสถานะในตาราง..."):
+                    try:
+                        # ดึงข้อมูลล่าสุดมาแก้ไขเฉพาะแถว
+                        save_df = conn.read()
+                        save_df.columns = save_df.columns.astype(str).str.strip()
+                        
+                        save_df.at[selected_idx, 'Status'] = new_status_val
+                        
+                        conn.update(data=save_df)
+                        st.success(f"🎉 อัปเดตงานเป็นสถานะ '{new_status_val}' สำเร็จ!")
+                        st.cache_data.clear()
+                    except Exception as err:
+                        st.error(f"❌ ไม่สามารถอัปเดตสถานะได้: {err}")
         else:
             st.success("😎 ไม่มีงานคงค้างอยู่ในระบบให้แก้ไขแล้วครับ ทุกงานปิดหมดแล้ว!")
